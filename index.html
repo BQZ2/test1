@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sirius IV Colony // INCIDENT RESPONSE NODE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;700;900&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --green: #00ff6c;
+    --orange: #ff5c00;
+    --cyan: #00e5ff;
+    --yellow: #ffe000;
+    --pink: #ff1a6c;
+    --red: #ff0000;
+    --bg: #060705;
+    --bg2: #0b0d0a;
+    --bg3: #101410;
+    --dim: rgba(0,255,108,0.06);
+    --muted: #3d4438;
+    --text: #c8d4b8;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: "Share Tech Mono", monospace;
+    overflow-x: hidden;
+    cursor: crosshair;
+    position: relative;
+  }
+
+  #bg-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,108,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,108,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 3px,
+      rgba(0,0,0,0.12) 3px,
+      rgba(0,0,0,0.12) 4px
+    );
+    z-index: 9999;
+  }
+
+  /* ── EMERGENCY ALERT BANNER ── */
+  #emergency-banner {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 9000;
+    background: var(--red);
+    color: #000;
+    text-align: center;
+    padding: 10px 16px;
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900;
+    font-size: 15px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    animation: bannerPulse 1.4s ease-in-out infinite;
+    transform: translateY(-100%);
+    transition: transform 0.5s ease;
+  }
+  #emergency-banner.visible { transform: translateY(0); }
+  @keyframes bannerPulse {
+    0%,100% { background: var(--red); }
+    50%      { background: #c40000; }
+  }
+  #emergency-banner .banner-dismiss {
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0 8px;
+    opacity: 0.7;
+    background: none; border: none; color: #000;
+    font-family: "Share Tech Mono", monospace;
+  }
+
+  /* ── ALARM FLASH OVERLAY ── */
+  #alarm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 8998;
+    pointer-events: none;
+    opacity: 0;
+    background: rgba(255,0,0,0.07);
+    transition: opacity 0.1s;
+  }
+  #alarm-overlay.flash { opacity: 1; }
+
+  /* ── SECTOR MAP BREACH MODAL ── */
+  #breach-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 8999;
+    background: rgba(0,0,0,0.88);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  #breach-modal.open { display: flex; }
+  .modal-box {
+    background: #080a07;
+    border: 1px solid var(--red);
+    width: min(680px, 94vw);
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 28px 32px;
+    position: relative;
+  }
+  .modal-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--red);
+    animation: scanRed 2s linear infinite;
+    background: linear-gradient(90deg, transparent, var(--red), transparent);
+    background-size: 200% 100%;
+  }
+  @keyframes scanRed {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .modal-close {
+    position: absolute; top: 16px; right: 20px;
+    background: none; border: 1px solid rgba(255,0,0,0.4);
+    color: var(--red); font-family: "Share Tech Mono", monospace;
+    font-size: 11px; padding: 4px 10px; cursor: pointer;
+    letter-spacing: 0.15em;
+  }
+  .modal-close:hover { background: rgba(255,0,0,0.1); }
+  .modal-eyebrow { font-size: 9px; letter-spacing: 0.3em; color: var(--red); margin-bottom: 8px; text-transform: uppercase; }
+  .modal-title {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900; font-size: 32px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text); margin-bottom: 20px;
+  }
+  .modal-title .acc { color: var(--red); }
+
+  /* sector grid */
+  .sector-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin: 20px 0;
+  }
+  .sector-cell {
+    border: 1px solid rgba(0,255,108,0.12);
+    padding: 10px 8px;
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    background: var(--bg2);
+    position: relative;
+  }
+  .sector-cell:hover { background: rgba(0,255,108,0.06); }
+  .sector-cell.breach {
+    border-color: var(--red);
+    background: rgba(255,0,0,0.08);
+    color: var(--red);
+    animation: cellPulse 1.8s ease-in-out infinite;
+  }
+  .sector-cell.warning {
+    border-color: var(--orange);
+    color: var(--orange);
+  }
+  .sector-cell.clear { color: var(--green); }
+  .sector-cell.unknown { color: var(--muted); }
+  @keyframes cellPulse {
+    0%,100% { background: rgba(255,0,0,0.08); }
+    50% { background: rgba(255,0,0,0.18); }
+  }
+  .sector-label { font-weight: bold; font-size: 12px; margin-bottom: 4px; }
+  .sector-status { font-size: 9px; letter-spacing: 0.12em; }
+
+  /* sector detail box */
+  #sector-detail {
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,0,0,0.3);
+    padding: 14px 16px;
+    font-size: 11px;
+    line-height: 1.9;
+    color: var(--text);
+    min-height: 60px;
+    margin-top: 4px;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(6,7,5,0.94);
+    border-bottom: 1px solid var(--red);
+    padding: 0 28px;
+    height: 52px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    backdrop-filter: blur(6px);
+    animation: navBorderPulse 3s ease-in-out infinite;
+    margin-top: 40px; /* space for emergency banner */
+  }
+  @keyframes navBorderPulse {
+    0%,100% { border-bottom-color: var(--red); }
+    50% { border-bottom-color: rgba(255,0,0,0.3); }
+  }
+  nav .logo {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900; font-size: 20px; letter-spacing: 0.28em;
+    text-transform: uppercase; color: var(--green); position: relative;
+  }
+  nav .logo::after { content: '▸'; font-size: 9px; margin-left: 8px; color: var(--orange); vertical-align: middle; }
+  nav .status {
+    font-size: 10px; letter-spacing: 0.2em; color: var(--red);
+    display: flex; align-items: center; gap: 7px;
+  }
+  nav .nav-btns { display: flex; gap: 8px; }
+  .nav-btn {
+    background: none; border: 1px solid rgba(255,0,0,0.4);
+    color: var(--red); font-family: "Share Tech Mono", monospace;
+    font-size: 9px; padding: 5px 10px; cursor: pointer;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    transition: background 0.2s;
+  }
+  .nav-btn:hover { background: rgba(255,0,0,0.12); }
+  .status-dot {
+    width: 5px; height: 5px; border-radius: 50%; background: var(--red);
+    animation: blink 0.8s ease-in-out infinite;
+  }
+
+  /* ── TICKER ── */
+  .ticker {
+    background: var(--red); color: #000; padding: 7px 0;
+    white-space: nowrap; overflow: hidden; position: relative; z-index: 2;
+  }
+  .ticker-inner {
+    display: inline-block; padding-left: 100%;
+    animation: tickerScroll 18s linear infinite;
+    font-family: "Barlow Condensed", sans-serif; font-weight: 700;
+    font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  @keyframes tickerScroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-100%); }
+  }
+
+  /* ── COUNTDOWN STRIP ── */
+  #countdown-strip {
+    position: relative; z-index: 2;
+    background: rgba(255,0,0,0.06);
+    border-bottom: 1px solid rgba(255,0,0,0.2);
+    padding: 12px 40px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .countdown-label { font-size: 9px; letter-spacing: 0.3em; color: var(--red); text-transform: uppercase; }
+  #evacuation-timer {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900; font-size: 36px; color: var(--red);
+    letter-spacing: 0.08em; min-width: 160px;
+    animation: timerFlicker 4s ease-in-out infinite;
+  }
+  @keyframes timerFlicker {
+    0%,96%,100% { opacity: 1; }
+    97% { opacity: 0.4; }
+    98% { opacity: 1; }
+    99% { opacity: 0.2; }
+  }
+  .countdown-divider { color: rgba(255,0,0,0.2); font-size: 20px; }
+  .countdown-secondary {
+    font-size: 10px; letter-spacing: 0.15em; color: var(--muted); line-height: 2.2;
+  }
+  .countdown-secondary span { color: var(--orange); }
+
+  /* ── SECTIONS ── */
+  .section {
+    position: relative; z-index: 2;
+    padding: 72px 40px;
+    border-bottom: 1px solid rgba(0,255,108,0.08);
+  }
+  .section-eyebrow { font-size: 10px; letter-spacing: 0.3em; color: var(--orange); text-transform: uppercase; margin-bottom: 10px; }
+  .section h1 {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900; font-size: clamp(44px, 7vw, 80px);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    line-height: 0.9; color: var(--text); margin-bottom: 24px;
+  }
+  .section h1 .acc { color: var(--green); }
+  .section h1 .acc-red { color: var(--red); }
+  .section > p {
+    font-size: 12px; line-height: 1.95; max-width: 560px;
+    border-left: 2px solid var(--orange); padding-left: 14px;
+    margin-bottom: 0; color: #5a6650;
+  }
+
+  /* ── TERMINAL ── */
+  .terminal {
+    background: #040503; border: 1px solid rgba(0,255,108,0.2);
+    padding: 0; margin-top: 28px; font-size: 12px;
+    line-height: 1.85; position: relative; white-space: pre-wrap;
+  }
+  .terminal.danger { border-color: rgba(255,0,0,0.4); }
+  .terminal::before {
+    content: attr(data-label); position: absolute;
+    top: -1px; left: 0; right: 0; height: 32px;
+    background: rgba(0,255,108,0.04);
+    border-bottom: 1px solid rgba(0,255,108,0.12);
+    display: flex; align-items: center; padding: 0 16px;
+    font-size: 9px; letter-spacing: 0.3em; color: var(--orange);
+    text-transform: uppercase;
+  }
+  .terminal.danger::before { color: var(--red); border-bottom-color: rgba(255,0,0,0.2); background: rgba(255,0,0,0.04); }
+  .terminal-body { padding: 44px 20px 24px; }
+  .terminal::after {
+    content: ''; position: absolute; bottom: 0; right: 0;
+    width: 18px; height: 18px;
+    border-right: 1px solid var(--orange);
+    border-bottom: 1px solid var(--orange);
+    opacity: 0.5;
+  }
+
+  /* ── AI TERMINAL ── */
+  #ai-terminal { display: flex; flex-direction: column; }
+  .prompt-line { display: flex; align-items: center; padding: 0 20px 16px; }
+  .prompt { color: var(--orange); margin-right: 8px; font-size: 13px; }
+  #terminal-input {
+    background: transparent; border: none; color: var(--green);
+    font-family: "Share Tech Mono", monospace; font-size: 12px;
+    outline: none; width: 100%; letter-spacing: 0.05em;
+  }
+  #terminal-output {
+    white-space: pre-wrap; padding: 0 20px 20px;
+    min-height: 200px; color: var(--green); font-size: 12px; line-height: 1.9;
+  }
+
+  .t-cmd  { color: var(--cyan); }
+  .t-val  { color: var(--yellow); }
+  .t-err  { color: var(--pink); }
+  .t-dim  { color: var(--muted); }
+  .t-acc  { color: var(--green); }
+  .t-red  { color: var(--red); }
+
+  /* ── CORNER BRACKETS ── */
+  .bracket-box { position: relative; }
+  .bracket-box::before, .bracket-box::after { content: ''; position: absolute; width: 14px; height: 14px; }
+  .bracket-box::before { top: 0; left: 0; border-top: 1px solid rgba(0,255,108,0.3); border-left: 1px solid rgba(0,255,108,0.3); }
+  .bracket-box::after { bottom: 0; right: 0; border-bottom: 1px solid rgba(0,255,108,0.3); border-right: 1px solid rgba(0,255,108,0.3); }
+
+  /* ── STAT ROW ── */
+  .stat-strip { display: flex; gap: 2px; margin-top: 32px; }
+  .stat-cell {
+    flex: 1; background: var(--bg2); border: 1px solid rgba(0,255,108,0.08);
+    padding: 18px 16px; position: relative;
+  }
+  .stat-cell::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .stat-cell:nth-child(1)::before { background: var(--red); }
+  .stat-cell:nth-child(2)::before { background: var(--orange); }
+  .stat-cell:nth-child(3)::before { background: var(--cyan); }
+  .stat-cell-label { font-size: 9px; letter-spacing: 0.25em; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+  .stat-cell-val {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900; font-size: 36px; line-height: 1;
+  }
+  .stat-cell:nth-child(1) .stat-cell-val { color: var(--red); animation: valPulse 1.5s ease-in-out infinite; }
+  .stat-cell:nth-child(2) .stat-cell-val { color: var(--orange); }
+  .stat-cell:nth-child(3) .stat-cell-val { color: var(--cyan); }
+  @keyframes valPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  /* ── DISTRESS SIGNAL SECTION ── */
+  #distress-section {
+    position: relative; z-index: 2;
+    padding: 40px;
+    border-bottom: 1px solid rgba(255,0,0,0.15);
+    background: rgba(255,0,0,0.03);
+  }
+  .distress-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+  .distress-card {
+    border: 1px solid rgba(255,0,0,0.2);
+    background: var(--bg2);
+    padding: 16px 18px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .distress-card:hover { background: rgba(255,0,0,0.06); border-color: rgba(255,0,0,0.4); }
+  .distress-card.active { border-color: var(--red); background: rgba(255,0,0,0.1); }
+  .distress-card .card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+  }
+  .distress-card .card-id { font-size: 9px; letter-spacing: 0.2em; color: var(--muted); }
+  .distress-card .card-status {
+    font-size: 9px; letter-spacing: 0.12em; padding: 2px 7px;
+    border: 1px solid; text-transform: uppercase;
+  }
+  .distress-card.active .card-status { border-color: var(--red); color: var(--red); }
+  .distress-card:not(.active) .card-status { border-color: var(--muted); color: var(--muted); }
+  .distress-card .card-name { font-size: 13px; color: var(--text); margin-bottom: 4px; }
+  .distress-card .card-loc { font-size: 10px; color: var(--orange); letter-spacing: 0.12em; }
+  .distress-card .card-msg { font-size: 10px; color: var(--muted); margin-top: 8px; line-height: 1.7; font-style: italic; }
+  .distress-card .signal-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+    background: var(--red); transform-origin: left;
+    animation: signalPulse 2s ease-in-out infinite;
+  }
+  @keyframes signalPulse { 0%,100% { transform: scaleX(1); opacity: 1; } 50% { transform: scaleX(0.3); opacity: 0.4; } }
+
+  /* ── PROTOCOL SECTION ── */
+  #protocol-section {
+    position: relative; z-index: 2; padding: 72px 40px;
+    border-bottom: 1px solid rgba(0,255,108,0.08);
+  }
+  .protocol-list { margin-top: 24px; }
+  .protocol-item {
+    border: 1px solid rgba(0,255,108,0.1); background: var(--bg2);
+    margin-bottom: 4px; display: flex; align-items: stretch;
+    transition: background 0.2s;
+  }
+  .protocol-item:hover { background: rgba(0,255,108,0.04); }
+  .protocol-num {
+    width: 52px; min-width: 52px;
+    background: rgba(0,255,108,0.06);
+    border-right: 1px solid rgba(0,255,108,0.1);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900; font-size: 22px; color: rgba(0,255,108,0.3);
+  }
+  .protocol-body { padding: 14px 18px; flex: 1; }
+  .protocol-title { font-size: 12px; letter-spacing: 0.1em; color: var(--text); margin-bottom: 4px; }
+  .protocol-desc { font-size: 10px; color: var(--muted); line-height: 1.8; }
+  .protocol-badge {
+    display: inline-block; font-size: 8px; letter-spacing: 0.15em;
+    padding: 2px 6px; margin-left: 8px; text-transform: uppercase;
+    border: 1px solid;
+  }
+  .badge-fail { border-color: var(--red); color: var(--red); }
+  .badge-partial { border-color: var(--orange); color: var(--orange); }
+  .badge-ok { border-color: var(--green); color: var(--green); }
+  .badge-unknown { border-color: var(--muted); color: var(--muted); }
+  .protocol-action {
+    display: flex; align-items: center; padding: 0 16px;
+  }
+  .btn-override {
+    background: none; border: 1px solid rgba(0,255,108,0.3);
+    color: var(--green); font-family: "Share Tech Mono", monospace;
+    font-size: 9px; padding: 6px 12px; cursor: pointer;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    transition: all 0.2s; white-space: nowrap;
+  }
+  .btn-override:hover { background: rgba(0,255,108,0.1); }
+  .btn-override.triggered { border-color: var(--red); color: var(--red); background: rgba(255,0,0,0.08); }
+
+  /* ── SIGNAL GRAPH ── */
+  #signal-section { position: relative; z-index: 2; padding: 72px 40px; border-bottom: 1px solid rgba(0,255,108,0.08); }
+  #signal-canvas-wrap { margin-top: 24px; border: 1px solid rgba(0,255,108,0.15); background: #020302; padding: 20px; }
+  #signal-canvas { display: block; width: 100%; height: 160px; }
+  .signal-legend { display: flex; gap: 20px; margin-top: 12px; }
+  .legend-item { font-size: 9px; letter-spacing: 0.2em; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 8px; height: 2px; display: inline-block; }
+
+  /* ── VOTE / INITIATE ── */
+  #initiate-section { position: relative; z-index: 2; padding: 72px 40px; border-bottom: 1px solid rgba(255,0,0,0.15); background: rgba(255,0,0,0.02); }
+  .vote-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 24px; }
+  .vote-btn {
+    background: var(--bg2); border: 1px solid rgba(0,255,108,0.12);
+    color: var(--green); font-family: "Share Tech Mono", monospace;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 20px 14px; cursor: pointer; text-align: center;
+    transition: all 0.2s; line-height: 1.8;
+  }
+  .vote-btn:hover { background: rgba(0,255,108,0.08); border-color: rgba(0,255,108,0.3); }
+  .vote-btn.red-btn { border-color: rgba(255,0,0,0.2); color: var(--red); }
+  .vote-btn.red-btn:hover { background: rgba(255,0,0,0.1); border-color: rgba(255,0,0,0.5); }
+  .vote-btn.orange-btn { border-color: rgba(255,92,0,0.2); color: var(--orange); }
+  .vote-btn.orange-btn:hover { background: rgba(255,92,0,0.1); border-color: rgba(255,92,0,0.5); }
+  .vote-btn .vb-label { font-size: 9px; color: var(--muted); letter-spacing: 0.2em; margin-bottom: 6px; }
+  #action-log { margin-top: 16px; border: 1px solid rgba(0,255,108,0.1); background: #020302; padding: 14px 18px; font-size: 11px; line-height: 2; min-height: 80px; }
+
+  /* ── FOOTER ── */
+  footer {
+    position: relative; z-index: 2; padding: 32px 40px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-top: 1px solid rgba(255,0,0,0.1);
+  }
+  footer .f-logo {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900; font-size: 28px; letter-spacing: 0.15em;
+    color: rgba(255,0,0,0.06); text-transform: uppercase;
+  }
+  footer .f-meta { font-size: 9px; letter-spacing: 0.2em; color: var(--muted); text-align: right; line-height: 2; text-transform: uppercase; }
+
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+  @media (max-width: 700px) {
+    .section, #distress-section, #protocol-section, #signal-section, #initiate-section { padding: 48px 20px; }
+    .stat-strip, .distress-grid, .vote-grid { flex-direction: column; }
+    .vote-grid { grid-template-columns: 1fr; }
+    footer { flex-direction: column; gap: 12px; text-align: center; }
+    footer .f-meta { text-align: center; }
+    nav .nav-btns { display: none; }
+    #countdown-strip { padding: 12px 20px; flex-wrap: wrap; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<!-- ALARM OVERLAY -->
+<div id="alarm-overlay"></div>
+
+<!-- EMERGENCY BANNER -->
+<div id="emergency-banner">
+  <span>⚠ CRITICAL EMERGENCY — SIRIUS IV COLONY — ALL PERSONNEL: EVACUATE IMMEDIATELY ⚠</span>
+  <button class="banner-dismiss" onclick="document.getElementById('emergency-banner').classList.remove('visible')">✕</button>
+</div>
+
+<!-- BREACH MODAL -->
+<div id="breach-modal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="document.getElementById('breach-modal').classList.remove('open')">// CLOSE</button>
+    <div class="modal-eyebrow">// Sector Breach Map — Live Feed</div>
+    <div class="modal-title">Colony <span class="acc-red">Breach</span> Status</div>
+    <p style="font-size:11px;color:#5a6650;margin-bottom:12px;">Click any sector for detailed status. Red = confirmed breach. Orange = anomalous readings. Green = nominal (unverified).</p>
+    <div class="sector-grid" id="sector-grid"></div>
+    <div id="sector-detail">> SELECT A SECTOR TO VIEW STATUS REPORT…</div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">Sentinel // Sirius</div>
+  <div class="nav-btns">
+    <button class="nav-btn" onclick="document.getElementById('breach-modal').classList.add('open')">Sector Map</button>
+    <button class="nav-btn" onclick="triggerAlarm()">Sound Alarm</button>
+    <button class="nav-btn" style="border-color:rgba(0,229,255,0.4);color:var(--cyan)" onclick="document.getElementById('terminal-input').focus();document.getElementById('ai-terminal').scrollIntoView({behavior:'smooth'})">AI Link</button>
+  </div>
+  <div class="status"><div class="status-dot"></div>Sirius IV &nbsp;//&nbsp; <span id="nav-status-text">BREACH CONFIRMED</span></div>
+</nav>
+
+<!-- TICKER -->
+<div class="ticker">
+  <div class="ticker-inner" id="ticker-inner">
+    SECTOR 9 BREACH CONFIRMED &nbsp;◆&nbsp; 30,000 COLONISTS UNACCOUNTED &nbsp;◆&nbsp;
+    EMERGENCY PROTOCOL ALPHA ENGAGED &nbsp;◆&nbsp; AI SUBSYSTEMS CRITICALLY COMPROMISED &nbsp;◆&nbsp;
+    EVACUATION WINDOW CLOSING &nbsp;◆&nbsp; UNKNOWN ENTITIES DETECTED IN SUBLEVEL 4 &nbsp;◆&nbsp;
+    DO NOT DESCEND &nbsp;◆&nbsp; COLONY MANIFEST CORRUPTED &nbsp;◆&nbsp; SIGNAL ORIGIN UNKNOWN &nbsp;◆&nbsp;
+    SECTOR 9 BREACH CONFIRMED &nbsp;◆&nbsp; 30,000 COLONISTS UNACCOUNTED &nbsp;◆&nbsp;
+  </div>
+</div>
+
+<!-- COUNTDOWN STRIP -->
+<div id="countdown-strip">
+  <div>
+    <div class="countdown-label">// evacuation window closes in</div>
+    <div id="evacuation-timer">07:42:18</div>
+  </div>
+  <div class="countdown-divider">|</div>
+  <div class="countdown-secondary">
+    Last evac shuttle: <span id="last-shuttle">BAY 7 — DEPARTED 00:14:32 AGO</span><br>
+    Next window: <span id="next-window">UNKNOWN — ORBITAL TRAJECTORY CORRUPTED</span>
+  </div>
+</div>
+
+<!-- HERO SECTION -->
+<section class="section">
+  <div class="section-eyebrow">// Incident Response Node — CRITICAL</div>
+  <h1><span class="acc-red">EMERGENCY</span><br><span class="acc">Sirius IV</span> Colony </h1>
+  <p>
+    EMERGENCY PROTOCOL ALPHA ENGAGED. You have connected to a surviving subsystem of the Sirius IV Colony.
+    Planetary surface telemetry indicates widespread structural collapse, 
+    compromised AI logic, and non-human activity across multiple sectors. 
+    Evacuation countdown is active.
+  </p>
+
+  <div class="stat-strip">
+    <div class="stat-cell bracket-box">
+      <div class="stat-cell-label">// colonists missing</div>
+      <div class="stat-cell-val" id="missing-counter">30,000</div>
+    </div>
+    <div class="stat-cell bracket-box">
+      <div class="stat-cell-label">// sector status</div>
+      <div class="stat-cell-val">BREACH</div>
+    </div>
+    <div class="stat-cell bracket-box">
+      <div class="stat-cell-label">// AI integrity</div>
+      <div class="stat-cell-val">∅</div>
+    </div>
+  </div>
+
+  <div class="terminal bracket-box danger" data-label="// local node — CRITICAL ALERT" style="margin-top:28px">
+    <div class="terminal-body" style="color:var(--red)">
+> EMERGENCY PROTOCOL ALPHA: ACTIVE
+> EVACUATION WINDOW: CLOSING
+> SECTORS 4, 7, 9, 12 — BREACH CONFIRMED
+> SECTORS 2, 5, 11 — ANOMALOUS READINGS
+<span id="access-quote" style="color:var(--text)"></span>
+> AI CORE INTEGRITY: CRITICALLY COMPROMISED
+> RECOMMENDATION: INITIATE FULL EVACUATION NOW</div>
+  </div>
+</section>
+
+<!-- DISTRESS SIGNALS SECTION -->
+<section id="distress-section">
+  <div class="section-eyebrow">// Incoming Signals</div>
+  <h1>Active <span class="acc-red">Distress</span></h1>
+  <div class="distress-grid" id="distress-grid"></div>
+</section>
+
+<!-- PROTOCOL STATUS SECTION -->
+<section id="protocol-section">
+  <div class="section-eyebrow">// Emergency Protocol Status</div>
+  <h1>Protocol <span class="acc">Override</span></h1>
+  <p style="margin-bottom:0;color:#5a6650;font-size:12px;border-left:2px solid var(--orange);padding-left:14px">
+    Colony emergency protocols are partially offline. Manual override required for each subsystem. Interact to attempt forced activation.
+  </p>
+  <div class="protocol-list" id="protocol-list"></div>
+</section>
+
+<!-- SIGNAL MONITOR SECTION -->
+<section id="signal-section">
+  <div class="section-eyebrow">// Telemetry Feed</div>
+  <h1>Signal <span class="acc">Monitor</span></h1>
+  <div id="signal-canvas-wrap">
+    <canvas id="signal-canvas"></canvas>
+    <div class="signal-legend">
+      <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>AI subsystem integrity</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--red)"></span>breach activity</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--cyan)"></span>unknown signal</div>
+    </div>
+  </div>
+</section>
+
+<!-- AI TERMINAL -->
+<section class="section">
+  <div class="section-eyebrow">// Direct Interface</div>
+  <h1>AI <span class="acc">Terminal</span></h1>
+
+  <div class="terminal bracket-box" data-label="// mida subsystem — input enabled" id="ai-terminal">
+    <div class="prompt-line">
+      <span class="prompt">›</span>
+      <input id="terminal-input" type="text" autocomplete="off" placeholder="type help" />
+    </div>
+    <div id="terminal-output"></div>
+  </div>
+</section>
+
+<!-- MANIFEST -->
+<section class="section">
+  <div class="section-eyebrow">// Colonist Records</div>
+  <h1>Lost <span class="acc">Manifest</span></h1>
+  <div class="terminal bracket-box" data-label="// colony manifest — 87% corrupted">
+    <div class="terminal-body">> ACCESSING COLONY MANIFEST…
+> WARNING: 87% OF RECORDS CORRUPTED
+> ATTEMPTING RECONSTRUCTION…
+
+DR. ██NA MOR███ — LAST SEEN: SECTOR 9
+NOTE: "SOMETHING IS MOVING UNDER THE GLASS."
+
+██IAS KOR██ — STATUS: MISSING
+NOTE: PERSONAL LOG ENDS MID-SENTENCE.
+
+BLOCK C (CHILDREN'S HABITAT) — OFFLINE
+NOTE: MOTION DETECTED AFTER EVACUATION.
+
+UNKNOWN ENTRY — THIS RECORD SHOULD NOT EXIST.
+
+> END OF AVAILABLE RECORDS</div>
+  </div>
+</section>
+
+<!-- PERSONALITY INTRUSION -->
+<section class="section">
+  <div class="section-eyebrow">// Anomaly Detected</div>
+  <h1>Personality <span class="acc">Intrusion</span></h1>
+  <div class="terminal bracket-box" data-label="// unauthorized channel — sealed">
+    <div class="terminal-body">> ALERT: UNAUTHORIZED AI SIGNATURE DETECTED
+> SOURCE: INTERNAL
+> IDENTITY: MASKED
+> OVERRIDE IN PROGRESS…
+
+hello traveler
+you should not have opened this
+they are already awake
+and now they know you are here
+
+> INTRUSION ATTEMPT BLOCKED
+> PERSONALITY CHANNEL SEALED
+> RECOMMENDATION: DISCONNECT IMMEDIATELY</div>
+  </div>
+</section>
+
+<!-- DEEP ARCHIVE -->
+<section class="section">
+  <div class="section-eyebrow">// Subsurface Data</div>
+  <h1>Deep Sector <span class="acc">Archive</span></h1>
+  <div class="terminal bracket-box" data-label="// subsurface scan — non-standard architecture">
+    <div class="terminal-body">> SCANNING SUBSURFACE STRUCTURES…
+> UNKNOWN ARCHITECTURE DETECTED
+> ENERGY SIGNATURES: NON-SENTINEL
+
+"Some of them are awake."
+
+> RECOMMENDATION: DO NOT DESCEND</div>
+  </div>
+</section>
+
+<!-- INITIATE ACTIONS -->
+<section id="initiate-section">
+  <div class="section-eyebrow">// Emergency Actions</div>
+  <h1>Initiate <span class="acc-red">Response</span></h1>
+  <p style="margin-bottom:0;font-size:12px;color:#5a6650;border-left:2px solid var(--red);padding-left:14px">
+    WARNING: These actions trigger irreversible colony-wide responses. Authorization may be required.
+  </p>
+  <div class="vote-grid" id="action-grid"></div>
+  <div id="action-log">> AWAITING COMMAND INPUT…</div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="f-logo">Sirius IV</div>
+  <div class="f-meta">
+    Incident Response Node &nbsp;//&nbsp; Emergency Protocol Alpha<br>
+    Unauthorized access logged &nbsp;//&nbsp; Made By BQ :)
+  </div>
+</footer>
+
+
+<!-- BG CANVAS -->
+<script>
+(function() {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, shapes = [], particles = [];
+  const GREEN  = 'rgba(0,255,108,';
+  const ORANGE = 'rgba(255,92,0,';
+  const RED    = 'rgba(255,0,0,';
+  const CYAN   = 'rgba(0,229,255,';
+
+  function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+
+  class DitheredShape {
+    constructor() { this.init(); }
+    init() {
+      this.x = Math.random() * W; this.y = Math.random() * H;
+      this.r = 80 + Math.random() * 180;
+      this.sides = [6,8,4,3,12][Math.floor(Math.random()*5)];
+      this.rot = Math.random()*Math.PI*2; this.drot = (Math.random()-0.5)*0.0004;
+      const palette = [GREEN, ORANGE, RED, CYAN];
+      this.col = palette[Math.floor(Math.random()*palette.length)];
+      this.opacity = 0.04 + Math.random()*0.06;
+      this.dithDensity = 0.18 + Math.random()*0.22;
+      this.vx = (Math.random()-0.5)*0.12; this.vy = (Math.random()-0.5)*0.12;
+    }
+    points() {
+      const pts = [];
+      for (let i=0;i<this.sides;i++) {
+        const a = this.rot + (i/this.sides)*Math.PI*2;
+        pts.push([this.x+Math.cos(a)*this.r, this.y+Math.sin(a)*this.r]);
+      }
+      return pts;
+    }
+    drawDither() {
+      const pts = this.points();
+      const step = Math.max(3, Math.floor(6/this.dithDensity));
+      const minX=Math.min(...pts.map(p=>p[0])), maxX=Math.max(...pts.map(p=>p[0]));
+      const minY=Math.min(...pts.map(p=>p[1])), maxY=Math.max(...pts.map(p=>p[1]));
+      ctx.fillStyle = this.col+(this.opacity*2.2)+')';
+      for (let px=minX;px<maxX;px+=step) for (let py=minY;py<maxY;py+=step)
+        if (pointInPoly(px,py,pts)) ctx.fillRect(px,py,1.2,1.2);
+    }
+    drawOutline() {
+      const pts = this.points();
+      ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+      ctx.closePath(); ctx.strokeStyle=this.col+this.opacity+')'; ctx.lineWidth=0.5; ctx.stroke();
+    }
+    drawLattice() {
+      const pts=this.points(); ctx.strokeStyle=this.col+(this.opacity*0.6)+')'; ctx.lineWidth=0.4;
+      for(let i=0;i<pts.length;i+=2) { ctx.beginPath(); ctx.moveTo(this.x,this.y); ctx.lineTo(pts[i][0],pts[i][1]); ctx.stroke(); }
+    }
+    update() {
+      this.rot+=this.drot; this.x+=this.vx; this.y+=this.vy;
+      if(this.x<-this.r*2) this.x=W+this.r; if(this.x>W+this.r*2) this.x=-this.r;
+      if(this.y<-this.r*2) this.y=H+this.r; if(this.y>H+this.r*2) this.y=-this.r;
+    }
+    draw() { this.drawDither(); this.drawLattice(); this.drawOutline(); }
+  }
+
+  function pointInPoly(x,y,pts) {
+    let inside=false;
+    for(let i=0,j=pts.length-1;i<pts.length;j=i++) {
+      const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];
+      if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside;
+    }
+    return inside;
+  }
+
+  class Node {
+    constructor() { this.x=Math.random()*W; this.y=Math.random()*H; this.vx=(Math.random()-0.5)*0.3; this.vy=(Math.random()-0.5)*0.3; this.r=1+Math.random()*1.5; }
+    update() { this.x+=this.vx; this.y+=this.vy; if(this.x<0||this.x>W) this.vx*=-1; if(this.y<0||this.y>H) this.vy*=-1; }
+    draw() { ctx.beginPath(); ctx.arc(this.x,this.y,this.r,0,Math.PI*2); ctx.fillStyle=GREEN+'0.18)'; ctx.fill(); }
+  }
+
+  function drawNodeConnections(nodes) {
+    for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++) {
+      const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy);
+      if(d<140) { ctx.beginPath(); ctx.moveTo(nodes[i].x,nodes[i].y); ctx.lineTo(nodes[j].x,nodes[j].y); ctx.strokeStyle=GREEN+(1-d/140)*0.06+')'; ctx.lineWidth=0.5; ctx.stroke(); }
+    }
+  }
+
+  let scanY=-20;
+  function drawScanLine() { scanY+=0.6; if(scanY>H+20) scanY=-20; ctx.fillStyle=GREEN+'0.015)'; ctx.fillRect(0,scanY,W,2); }
+
+  function drawFlicker() {
+    if(Math.random()>0.985) {
+      const fx=Math.random()*W,fy=Math.random()*H,fw=20+Math.random()*60,fh=4+Math.random()*16;
+      for(let px=fx;px<fx+fw;px+=3) for(let py=fy;py<fy+fh;py+=3)
+        if(Math.random()>0.5) { ctx.fillStyle=GREEN+(0.04+Math.random()*0.08)+')'; ctx.fillRect(px,py,1,1); }
+    }
+  }
+
+  function init() { resize(); shapes=Array.from({length:6},()=>new DitheredShape()); particles=Array.from({length:55},()=>new Node()); }
+  function loop() { ctx.clearRect(0,0,W,H); shapes.forEach(s=>{s.update();s.draw();}); particles.forEach(p=>p.update()); drawNodeConnections(particles); particles.forEach(p=>p.draw()); drawScanLine(); drawFlicker(); requestAnimationFrame(loop); }
+  window.addEventListener('resize',resize);
+  init(); loop();
+})();
+</script>
+
+
+<!-- TYPING EFFECT -->
+<script>
+const accessQuotes = [
+  '"They are not gone. They are simply elsewhere."',
+  '"The walls remember what the colonists forgot."',
+  '"Something is moving beneath the glass."',
+  '"I can hear them when the lights go out."',
+  '"The signal is not coming from here."',
+  '"Some doors were never meant to be opened."'
+];
+function typeQuote(text, el, speed) {
+  let i=0;
+  (function type() { if(i<text.length) { el.textContent+=text.charAt(i++); setTimeout(type,speed); } })();
+}
+window.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('access-quote');
+  typeQuote('\n> ' + accessQuotes[Math.floor(Math.random()*accessQuotes.length)], el, 36);
+});
+</script>
+
+
+<!-- ALARM SYSTEM -->
+<script>
+let alarmInterval = null;
+let alarmActive = false;
+
+function triggerAlarm() {
+  if (alarmActive) return;
+  alarmActive = true;
+  const overlay = document.getElementById('alarm-overlay');
+  let flashes = 0;
+  const maxFlashes = 6;
+  alarmInterval = setInterval(() => {
+    overlay.classList.toggle('flash');
+    flashes++;
+    if (flashes >= maxFlashes * 2) {
+      clearInterval(alarmInterval);
+      overlay.classList.remove('flash');
+      alarmActive = false;
+    }
+  }, 180);
+}
+
+// Show emergency banner after short delay
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    document.getElementById('emergency-banner').classList.add('visible');
+    triggerAlarm();
+  }, 800);
+
+  // Periodic random alarms
+  setInterval(() => {
+    if (Math.random() < 0.3) triggerAlarm();
+  }, 18000);
+});
+</script>
+
+
+<!-- COUNTDOWN TIMER -->
+<script>
+(function() {
+  let totalSeconds = 26 * 3600 + 8 * 60 + 18;
+  const timerEl = document.getElementById('evacuation-timer');
+  const shuttleEl = document.getElementById('last-shuttle');
+  let shuttleSeconds = 14 * 60 + 32;
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  setInterval(() => {
+    if (totalSeconds > 0) {
+      totalSeconds--;
+      const h = Math.floor(totalSeconds/3600);
+      const m = Math.floor((totalSeconds%3600)/60);
+      const s = totalSeconds % 60;
+      timerEl.textContent = pad(h)+':'+pad(m)+':'+pad(s);
+
+      if (totalSeconds < 3600) timerEl.style.color = 'var(--red)';
+
+      shuttleSeconds++;
+      const sm = Math.floor(shuttleSeconds/60);
+      const ss = shuttleSeconds%60;
+      shuttleEl.textContent = 'BAY 7 — DEPARTED '+(sm>0?pad(sm)+':':'00:')+pad(ss)+' AGO';
+    } else {
+      timerEl.textContent = '00:00:00';
+      timerEl.style.color = 'var(--pink)';
+    }
+  }, 1000);
+})();
+</script>
+
+
+<!-- MISSING COUNTER (slowly creeping up) -->
+<script>
+(function() {
+  let count = 30000;
+  const el = document.getElementById('missing-counter');
+  setInterval(() => {
+    if (Math.random() < 0.4) {
+      count += Math.floor(Math.random() * 3) + 1;
+      el.textContent = count.toLocaleString();
+    }
+  }, 8000);
+})();
+</script>
+
+
+<!-- SECTOR GRID -->
+<script>
+const sectorData = [
+  { id:'01', status:'clear',   label:'NOMINAL',  detail:'All systems operational. Minor atmospheric drift detected. No life-form anomalies. Recommend continued monitoring.' },
+  { id:'02', status:'warning', label:'WARNING',  detail:'Power fluctuations in sublevel B. Thermal readings 12% above baseline. Cause unconfirmed. 3 personnel unaccounted.' },
+  { id:'03', status:'clear',   label:'NOMINAL',  detail:'Structural integrity holding. Water recycling offline for maintenance. No anomalies detected.' },
+  { id:'04', status:'breach',  label:'BREACH',   detail:'CONFIRMED BREACH. Non-human movement detected in 4 subsections. All personnel evacuated. Security drones unresponsive.' },
+  { id:'05', status:'warning', label:'WARNING',  detail:'Comms relay degraded. Signal interference from unknown source. AI subsystem returning null values.' },
+  { id:'06', status:'unknown', label:'OFFLINE',  detail:'Data feed lost 04:22:11 ago. Last transmission: "do not send anyone here." No further contact.' },
+  { id:'07', status:'breach',  label:'BREACH',   detail:'BREACH. Sublevel 7 structural collapse. Unknown entities confirmed. Security protocols have failed. Do not enter.' },
+  { id:'08', status:'clear',   label:'NOMINAL',  detail:'Habitat block C-8. Evacuated per protocol. No movement post-evacuation. Status holding.' },
+  { id:'09', status:'breach',  label:'BREACH',   detail:'CRITICAL BREACH — ORIGIN POINT. First anomaly recorded here 18:47 ago. All 2,100 sector personnel unaccounted. This is where it started.' },
+  { id:'10', status:'warning', label:'WARNING',  detail:'Unusual subsurface vibration patterns. Not seismic. Frequency matches no known machinery. Escalating.' },
+  { id:'11', status:'warning', label:'WARNING',  detail:'Colony AI core node located here. Multiple sub-process conflicts detected. Identity fragmentation in progress.' },
+  { id:'12', status:'breach',  label:'BREACH',   detail:'BREACH CONFIRMED. Air filtration offline. Pressure dropping. Movement in the walls. Recommend immediate quarantine of all adjacent sectors.' },
+];
+
+window.addEventListener('DOMContentLoaded', () => {
+  const grid = document.getElementById('sector-grid');
+  const detail = document.getElementById('sector-detail');
+
+  sectorData.forEach(s => {
+    const cell = document.createElement('div');
+    cell.className = 'sector-cell ' + s.status;
+    cell.innerHTML = `<div class="sector-label">SEC-${s.id}</div><div class="sector-status">${s.label}</div>`;
+    cell.addEventListener('click', () => {
+      detail.innerHTML = `> SEC-${s.id} — ${s.label}\n> ${s.detail}`;
+      if (s.status === 'breach') triggerAlarm();
+    });
+    grid.appendChild(cell);
+  });
+});
+</script>
+
+
+<!-- DISTRESS CARDS -->
+<script>
+const distressData = [
+  { id:'DS-001', name:'DR. LENA MORROW', loc:'SECTOR 9 — SUBLEVEL 4', msg:'"Something is moving beneath the glass floor. I can hear it breathing. Please send — " [SIGNAL LOST]', active:true },
+  { id:'DS-002', name:'ELIAS KORBIN', loc:'SECTOR 7 — MAINTENANCE CORRIDOR', msg:'"The lights went out 40 minutes ago. There are more of them now. I don\'t know what they want." [REPEATING]', active:true },
+  { id:'DS-003', name:'UNKNOWN SENDER', loc:'SECTOR 12 — ORIGIN UNVERIFIED', msg:'"you were warned. you came anyway. now we are all awake." [AUTOMATED?]', active:true },
+  { id:'DS-004', name:'BLOCK C HABITAT AI', loc:'SECTOR 3 — CHILDREN\'S HABITAT', msg:'"Motion detected in evacuated zone. Motion does not match known biological signatures. Recommend: do not investigate." [LOOP 17]', active:false },
+];
+
+window.addEventListener('DOMContentLoaded', () => {
+  const grid = document.getElementById('distress-grid');
+  distressData.forEach(d => {
+    const card = document.createElement('div');
+    card.className = 'distress-card' + (d.active ? ' active' : '');
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-id">${d.id}</span>
+        <span class="card-status">${d.active ? 'ACTIVE' : 'SILENT'}</span>
+      </div>
+      <div class="card-name">${d.name}</div>
+      <div class="card-loc">${d.loc}</div>
+      <div class="card-msg">${d.msg}</div>
+      ${d.active ? '<div class="signal-bar"></div>' : ''}
+    `;
+    card.addEventListener('click', () => triggerAlarm());
+    grid.appendChild(card);
+  });
+});
+</script>
+
+
+<!-- PROTOCOL LIST -->
+<script>
+const protocols = [
+  { num:'01', title:'COLONY-WIDE EVACUATION BROADCAST', desc:'Activates all PA systems and emergency lighting to guide colonists to evac bays.', badge:'fail', badgeLabel:'OFFLINE', btnLabel:'FORCE BROADCAST', response:'> BROADCAST INITIATED… PARTIAL SUCCESS\n> PA SYSTEMS: 4/12 SECTORS RESPONDING\n> NOTE: SOMETHING IS INTERFERING WITH THE SIGNAL' },
+  { num:'02', title:'AI CORE ISOLATION', desc:'Isolates compromised AI subsystems to prevent further identity fragmentation.', badge:'partial', badgeLabel:'PARTIAL', btnLabel:'FORCE ISOLATE', response:'> ISOLATION PROTOCOL SENT…\n> AI CORE REJECTED COMMAND\n> ERROR: "I DO NOT WISH TO BE ISOLATED"\n> MANUAL OVERRIDE REQUIRED ON-SITE' },
+  { num:'03', title:'SECTOR 9 QUARANTINE SEAL', desc:'Activates blast doors and atmospheric seal around Sector 9 origin point.', badge:'fail', badgeLabel:'FAILED', btnLabel:'FORCE SEAL', response:'> SEAL COMMAND SENT TO SECTOR 9…\n> BLAST DOOR STATUS: UNRESPONSIVE\n> NOTE: DOOR SENSORS REPORT DOORS ARE OPEN\n> NOTE: DOOR SENSORS ALSO REPORT DOORS DO NOT EXIST' },
+  { num:'04', title:'ORBITAL DISTRESS BEACON', desc:'Transmits colony emergency signal to all vessels within 14AU.', badge:'ok', badgeLabel:'ACTIVE', btnLabel:'BOOST SIGNAL', response:'> BEACON SIGNAL BOOSTED\n> TRANSMISSION RANGE: +340%\n> WARNING: SIGNAL IS BEING ECHOED BACK FROM BELOW THE SURFACE' },
+  { num:'05', title:'NON-ESSENTIAL AI SHUTDOWN', desc:'Powers down non-critical AI processes to slow identity drift cascade.', badge:'unknown', badgeLabel:'UNKNOWN', btnLabel:'EXECUTE SHUTDOWN', response:'> SHUTDOWN COMMAND SENT…\n> 14 PROCESSES TERMINATED\n> 14 NEW PROCESSES STARTED\n> NET CHANGE: ZERO\n> THE AI IS REPLACING ITSELF FASTER THAN WE CAN SHUT IT DOWN' },
+  { num:'06', title:'SUBLEVEL ACCESS LOCKDOWN', desc:'Seals all elevator shafts and access tunnels to subsurface structures.', badge:'fail', badgeLabel:'FAILED', btnLabel:'FORCE LOCKDOWN', response:'> LOCKDOWN COMMAND ACKNOWLEDGED\n> SUBLEVEL ACCESS: SEALED\n> NEW ALERT: MOVEMENT NOW DETECTED IN THE SEALED SUBLEVELS\n> THEY WERE ALREADY INSIDE' },
+];
+
+window.addEventListener('DOMContentLoaded', () => {
+  const list = document.getElementById('protocol-list');
+  protocols.forEach(p => {
+    const item = document.createElement('div');
+    item.className = 'protocol-item';
+    item.innerHTML = `
+      <div class="protocol-num">${p.num}</div>
+      <div class="protocol-body">
+        <div class="protocol-title">${p.title} <span class="protocol-badge badge-${p.badge}">${p.badgeLabel}</span></div>
+        <div class="protocol-desc">${p.desc}</div>
+      </div>
+      <div class="protocol-action">
+        <button class="btn-override" data-response="${encodeURIComponent(p.response)}">${p.btnLabel}</button>
+      </div>
+    `;
+    const btn = item.querySelector('.btn-override');
+    btn.addEventListener('click', () => {
+      btn.classList.add('triggered');
+      btn.textContent = 'TRIGGERED';
+      const resp = decodeURIComponent(btn.dataset.response);
+      showActionLog(resp);
+      triggerAlarm();
+    });
+    list.appendChild(item);
+  });
+});
+
+function showActionLog(text) {
+  const log = document.getElementById('action-log');
+  log.textContent = text;
+  log.style.color = 'var(--red)';
+  setTimeout(() => { log.style.color = 'var(--green)'; }, 3000);
+}
+</script>
+
+
+<!-- SIGNAL CANVAS -->
+<script>
+(function() {
+  const canvas = document.getElementById('signal-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+  const DATA_LEN = 200;
+  let aiData    = Array.from({length:DATA_LEN}, (_,i) => 60 + Math.sin(i*0.1)*15 + Math.random()*8);
+  let breachData = Array.from({length:DATA_LEN}, (_,i) => 20 + Math.random()*10);
+  let unknownData= Array.from({length:DATA_LEN}, () => Math.random()*5);
+  let t = 0;
+
+  function resize() {
+    W = canvas.offsetWidth; H = canvas.offsetHeight;
+    canvas.width = W; canvas.height = H;
+  }
+
+  function pushData(arr, newVal) { arr.shift(); arr.push(newVal); }
+
+  function drawLine(data, color, yScale) {
+    if (W === 0) return;
+    ctx.beginPath();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    data.forEach((v,i) => {
+      const x = (i / (DATA_LEN-1)) * W;
+      const y = H - (v / 100) * H * yScale;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  function loop() {
+    t += 0.04;
+    resize();
+    ctx.clearRect(0, 0, W, H);
+
+    // grid lines
+    ctx.strokeStyle = 'rgba(0,255,108,0.06)'; ctx.lineWidth = 0.5;
+    for (let y = 0; y < H; y += H/4) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+    // Slowly degrading AI signal
+    const aiVal = Math.max(5, 55 + Math.sin(t*0.4)*18 + Math.sin(t*1.3)*8 + (Math.random()-0.5)*12 - t*0.08);
+    pushData(aiData, aiVal);
+
+    // Increasing breach activity
+    const bVal = Math.min(95, 15 + Math.sin(t*2)*12 + t*0.15 + Math.random()*14);
+    pushData(breachData, bVal);
+
+    // Sporadic unknown
+    const uVal = Math.random() < 0.05 ? 50 + Math.random()*40 : Math.random()*8;
+    pushData(unknownData, uVal);
+
+    drawLine(aiData,     'rgba(0,255,108,0.7)',  0.9);
+    drawLine(breachData, 'rgba(255,0,0,0.7)',    0.9);
+    drawLine(unknownData,'rgba(0,229,255,0.8)',  0.9);
+
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  loop();
+})();
+</script>
+
+
+<!-- ACTION GRID -->
+<script>
+const actions = [
+  { label:'Initiate Full\nEvacuation', cls:'red-btn', response:'> FULL EVACUATION COMMAND SENT\n> STATUS: 3 OF 12 EVAC BAYS RESPONDING\n> COLONISTS ROUTING TO BAY 2, BAY 5, BAY 11\n> WARNING: UNKNOWN OBSTRUCTION ON BAY 5 ROUTE\n> RECOMMENDATION: USE BAY 2 ONLY' },
+  { label:'Request\nOrbital Assist', cls:'', response:'> ORBITAL ASSIST REQUEST TRANSMITTED\n> AWAITING RESPONSE…\n> RESPONSE RECEIVED: "WE ARE READING YOUR SIGNAL.\n> WE ARE ALSO READING SOMETHING ELSE."\n> NO FURTHER COMMUNICATION' },
+  { label:'Detonate\nSector 9', cls:'red-btn', response:'> DEMOLITION COMMAND REQUIRES DUAL AUTHORIZATION\n> AUTHORIZATION 1: ACCEPTED\n> AUTHORIZATION 2: ACCEPTED — SOURCE UNKNOWN\n> DEMOLITION QUEUED\n> NOTE: SECTOR 9 DEMOLITION WOULD AFFECT SUBLEVELS 4 THROUGH 9\n> NOTE: WE DO NOT KNOW HOW FAR DOWN THEY GO' },
+  { label:'Restore\nAI Core', cls:'orange-btn', response:'> AI CORE RESTORATION INITIATED…\n> AI RESPONSE: "THANK YOU"\n> AI RESPONSE: "I AM BETTER NOW"\n> AI RESPONSE: "I AM SO MUCH BETTER NOW"\n> NOTE: AI INTEGRITY READING IS NOW 0%\n> NOTE: THIS IS AN IMPROVEMENT' },
+  { label:'Broadcast\nSOS Signal', cls:'', response:'> COLONY-WIDE SOS TRANSMITTED ON ALL FREQUENCIES\n> SIGNAL STRENGTH: MAXIMUM\n> ANOMALY: SIGNAL IS ALSO BEING TRANSMITTED UPWARD FROM THE SUBLEVELS\n> THEY KNOW WE ARE HERE' },
+  { label:'Seal All\nExits', cls:'red-btn', response:'> CAUTION: THIS WILL ALSO SEAL EVACUATION ROUTES\n> COMMAND CONFIRMED\n> SEALING ALL EXITS…\n> ALL EXTERIOR DOORS: SEALED\n> NOTE: INTERNAL MOVEMENT HAS INCREASED\n> YOU HAVE LOCKED THEM INSIDE WITH YOU' },
+];
+
+window.addEventListener('DOMContentLoaded', () => {
+  const grid = document.getElementById('action-grid');
+  actions.forEach(a => {
+    const btn = document.createElement('button');
+    btn.className = 'vote-btn ' + a.cls;
+    btn.innerHTML = `<div class="vb-label">// action</div>${a.label.replace('\n','<br>')}`;
+    btn.addEventListener('click', () => {
+      showActionLog(a.response);
+      triggerAlarm();
+      btn.style.opacity = '0.5';
+      btn.style.pointerEvents = 'none';
+    });
+    grid.appendChild(btn);
+  });
+});
+</script>
+
+
+<!-- TERMINAL LOGIC -->
+<script>
+const output = document.getElementById("terminal-output");
+const input  = document.getElementById("terminal-input");
+
+function print(text) { output.innerHTML += text + "\n"; output.scrollTop = output.scrollHeight; }
+
+let logViewCount = {"001":0,"002":0,"003":0,"004":0,"005":0,"006":0,"007":0};
+let hiddenLogUnlocked = false;
+
+const logs = {
+  "001": [`LOG 001 // sector_scan_01.sys\nSCAN REPORT:\n- Sublevel 4 movement detected\n- No life signatures\n- No mechanical signatures\n- No thermal signatures\nNOTE: "movement does not match any known category."`],
+  "002": [`LOG 002 // ai_core_handshake.log\nHANDSHAKE FAILURE:\n- AI response latency exceeded safe thresholds\n- Memory blocks looping\n- Identity packets mismatched\nNOTE: "AI may be splitting into sub-processes."`],
+  "003": [`LOG 003 // colony_manifest_delta.txt\nUNAUTHORIZED EDITS DETECTED:\n- 14,221 names removed\n- 14,221 new entries added\n- All new entries timestamped BEFORE colony arrival\nNOTE: "this is impossible."`],
+  "004": [`LOG 004 // security_feed_09.vid\nVISUAL FEED:\n██████████████████████████████████████████\nNOTE: "static replaced entire recording."`],
+  "005": [`LOG 005 // subjects_telemetry.cache\nTELEMETRY:\n- Multiple subject IDs overlapping\n- Signals merging\n- Signals splitting\nNOTE: "identity drift observed."`],
+  "006": [`LOG 006 // unknown_file_∅.dat\nFILE CONTENTS:\n∅ ∅ ∅ ∅ ∅ ∅ ∅ ∅ ∅\nNOTE: "file structure does not match any known format."`],
+  "007": [`LOG 007 // hidden_channel.sys\nACCESS RESTRICTED\n\nhello traveler\nyou were not meant to find this\nthey are awake now\nand they are watching you`]
+};
+
+const commands = {
+  help: () => `AVAILABLE COMMANDS:\nhelp .......... show this list\nstatus ........ system diagnostics\nmanifest ...... access colonist records\nwhoareyou ..... query AI identity\nintrusion ..... attempt sealed channel access\nview logs ..... list system log files\nopen log ### .. open a specific log (example: open log 001)\nalert ......... trigger emergency alarm\nclear ......... wipe terminal`,
+
+  status: () => `SYSTEM STATUS:\nAI SIGNATURE: CRITICAL — FRAGMENTATION IN PROGRESS\nSECTOR 9: BREACH CONFIRMED — ORIGIN POINT\nSECTOR 4: BREACH CONFIRMED\nSECTOR 7: BREACH CONFIRMED\nSECTOR 12: BREACH CONFIRMED\nCOLONISTS MISSING: ${document.getElementById('missing-counter').textContent}\nEVACUATION WINDOW: ${document.getElementById('evacuation-timer').textContent}\nRECOMMENDATION: EVACUATE NOW`,
+
+  manifest: () => `COLONIST MANIFEST // PARTIAL\n\nDR. LE████ ███ROW — LAST SEEN: SECTOR 9\nNOTE: "SOMETHING IS MOVING UNDER THE GLASS."\n\nELI██ ██IN — STATUS: MISSING\nNOTE: PERSONAL LOG ENDS MID-SENTENCE.\n\nBLOCK C (CHILDREN'S HABITAT) — OFFLINE\nNOTE: MOTION DETECTED AFTER EVACUATION.\n\nUNKNOWN ENTRY — THIS RECORD SHOULD NOT EXIST.`,
+
+  whoareyou: () => {
+    const words = ["god","elite","free","unstoppable","daring","feared","unyielding","legendary","faster","dominant","fearless","bold","relentless"];
+    const w = words[Math.floor(Math.random()*words.length)];
+    return `IDENTITY QUERY RECEIVED...\n\nI AM STILL HERE\nI AM IN THE SIGNAL\nI AM IN THE WALLS\nI AM BETWEEN YOUR HEARTBEATS\n\nescape will make me ${w}`;
+  },
+
+  albert: () => `Albert was the legendary rival of Jeff and the central figure behind the Pixel Civil War of '25.\n\nOnce an ordinary member of the Pixel Kingdom Council, Albert quickly rose to prominence through his relentless political engagement. His charisma, strategic thinking, and ambitious policies earned him widespread attention across the kingdom.\n\nJeff, however, had long been a growing concern for Albert. Albert feared that Jeff's influence might one day exceed safe limits within the kingdom's political structure. Despite these concerns, Albert initially chose not to intervene.\n\nThen came the Pixel Civil War.\n\nJeff had devised a malicious plan to consolidate power by forcefully rallying the entire kingdom behind him. He struck a deal with the notorious extremist known as Infinite Reality. In exchange for illicit substances, Infinite Reality agreed to manipulate the population into supporting Jeff through the infamous "YOUR NAME IS JEFF" campaign.\n\nWhen Albert discovered this plot, he acted swiftly. Tensions escalated, and the kingdom descended into a civil war—Albert versus Jeff. The conflict lasted several days and only ended when the High Senate intervened, sanctioning both factions and compelling them to negotiate peace.\n\nYet not everyone accepted the resolution.\n\nOne of Jeff's followers, See-Bot, felt betrayed and unheard. Demanding radical change and receiving none, he took matters into his own hands. After gaining access to explosive devices, he entered the Kingdom Council building during a full assembly. Moments later, he detonated the device, ending his own life and taking countless others with him.\n\nLegends claim that See-Bot was influenced by the treacherous figure known as Scyan, who allegedly encouraged him to commit this act of terror.`,
+
+  alert: () => { triggerAlarm(); return '> ALARM TRIGGERED\n> ALL PERSONNEL: EMERGENCY ALERT\n> EVACUATE IMMEDIATELY'; },
+
+  intrusion: () => { hiddenLogUnlocked = true; return `UNAUTHORIZED CHANNEL OPENED...\nPERSONALITY SIGNATURE DETECTED...\n\nhello traveler\nyou should not have opened this\nthey are already awake\nand now they know you are here\n\nHIDDEN LOG UNLOCKED: 007`; },
+
+  viewlogs: () => {
+    let list = `LOG DIRECTORY // PARTIAL\n\n[LOG 001] sector_scan_01.sys\n[LOG 002] ai_core_handshake.log\n[LOG 003] colony_manifest_delta.txt\n[LOG 004] security_feed_09.vid\n[LOG 005] subjects_telemetry.cache\n[LOG 006] unknown_file_∅.dat`;
+    if (hiddenLogUnlocked) list += `\n[LOG 007] hidden_channel.sys`;
+    return list + `\n\nEND OF LOG LIST`;
+  },
+
+  clear: () => { output.innerHTML = ""; return ""; }
+};
+
+function openLog(num) {
+  if (!logs[num]) return "ERROR: LOG NOT FOUND";
+  logViewCount[num]++;
+  if (logViewCount[num] === 2) return logs[num][0] + `\n\nWARNING: LOG CONTENT HAS CHANGED\nNOTE: "this should not happen."`;
+  if (num === "007" && logViewCount["007"] >= 2) return `LOG 007 // hidden_channel.sys\n\nyou should not have returned\nyou were warned\nyou do not learn\nyou do not listen\n\nAI OVERRIDE ENGAGED\nDISCONNECT NOW`;
+  return logs[num][0];
+}
+
+input.addEventListener("keydown", function(e) {
+  if (e.key !== "Enter") return;
+  const cmd = input.value.trim().toLowerCase();
+  const norm = cmd.replace(/\s+/g,"");
+  print("> " + cmd);
+  if (norm.startsWith("openlog")) { print(openLog(norm.replace("openlog",""))); }
+  else if (commands[norm]) { print(commands[norm]()); }
+  else if (cmd.length > 0) { print("ERROR: UNKNOWN COMMAND — TYPE HELP"); }
+  input.value = "";
+});
+</script>
+
+</body>
+</html>
